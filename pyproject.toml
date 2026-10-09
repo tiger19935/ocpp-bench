@@ -1,0 +1,88 @@
+[project]
+name = "ocpp-bench"
+version = "0.1.0"
+description = "OCPP 1.6J/2.0.1 central system test harness and station simulator"
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+license = { file = "LICENSE" }
+authors = [{ name = "Andrii Boiko", email = "a.boyko.93@gmail.com" }]
+dependencies = [
+    "ocpp>=2.0.0,<3",
+    "websockets>=13,<14",
+    "pydantic>=2.7,<3",
+    "pydantic-settings>=2.3,<3",
+    "pyyaml>=6.0,<7",
+    "structlog>=24.1,<25",
+    "typer>=0.12,<1",
+    "aiohttp>=3.9,<4",
+    "prometheus-client>=0.20,<1",
+]
+
+[project.scripts]
+ocpp-bench = "ocpp_bench.cli:app"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.2,<9",
+    "pytest-asyncio>=0.23,<1",
+    "pytest-cov>=5,<6",
+    "ruff>=0.5,<1",
+    "mypy>=1.10,<2",
+    "types-PyYAML",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ocpp_bench"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = [
+    "E", "F", "W", "I", "N", "UP", "B", "A", "C4", "PT", "SIM", "RET",
+    "RUF", "ASYNC", "PL",
+]
+ignore = ["PLR0913", "PLR2004"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["PLR2004", "S101"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+no_implicit_reexport = true
+packages = ["ocpp_bench"]
+mypy_path = "src"
+
+[[tool.mypy.overrides]]
+module = ["ocpp.*"]
+ignore_missing_imports = true
+follow_imports = "silent"
+
+[tool.pytest.ini_options]
+addopts = "-ra -q --strict-markers --strict-config"
+asyncio_mode = "auto"
+testpaths = ["tests"]
+markers = [
+    "slow: long-running tests (load) excluded from fast CI",
+]
+
+[tool.coverage.run]
+source = ["ocpp_bench"]
+branch = true
+
+[tool.coverage.report]
+fail_under = 85
+show_missing = true
+skip_covered = true
+
+[tool.coverage.paths]
+source = ["src/ocpp_bench", "*/site-packages/ocpp_bench"]
