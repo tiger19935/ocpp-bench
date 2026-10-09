@@ -1,0 +1,6 @@
+type: reconnect-storm
+stations: 200
+station_prefix: SIM-STORM-
+protocol: ocpp1.6
+storm_window_sec: 2
+recover_within_sec: 10

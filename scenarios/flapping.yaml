@@ -1,0 +1,8 @@
+type: flapping
+stable_stations: 199
+station_prefix: SIM-FLAP-
+protocol: ocpp1.6
+duration_sec: 10
+flap_interval_ms: 100
+heartbeat_interval_sec: 1
+isolation_tolerance_pct: 20
