@@ -52,6 +52,7 @@ ignore = ["PLR0913", "PLR0917", "PLR2004"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["PLR2004", "S101"]
+"src/ocpp_bench/protocol/errors.py" = ["N818"]
 
 [tool.mypy]
 python_version = "3.12"

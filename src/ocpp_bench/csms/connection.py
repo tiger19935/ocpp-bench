@@ -34,7 +34,7 @@ from ocpp_bench.config import Settings
 from ocpp_bench.csms.sessions import SessionStore
 from ocpp_bench.csms.stations import Station
 from ocpp_bench.logging import get_logger
-from ocpp_bench.protocol import Trigger
+from ocpp_bench.protocol import CallTimeout, Trigger
 
 logger = get_logger("csms.handlers")
 
@@ -62,11 +62,23 @@ class CsmsChargePointV16(ChargePointV16):  # type: ignore[misc]
         settings: Settings,
         sessions: SessionStore,
     ) -> None:
-        super().__init__(cp_id, connection)
+        super().__init__(cp_id, connection, response_timeout=settings.call_timeout_sec)
         self.station = station
         self.settings = settings
         self.sessions = sessions
         self.heartbeat_interval = 60
+
+    async def _call_or_mark_unresponsive(self, payload: Any, action: str) -> Any:
+        try:
+            return await self.call(payload)
+        except TimeoutError as exc:
+            self.station.fsm.transition(Trigger.CALL_TIMEOUT)
+            logger.warning(
+                "server-initiated call timed out",
+                action=action,
+                timeout_sec=self.settings.call_timeout_sec,
+            )
+            raise CallTimeout(self.id, action, self.settings.call_timeout_sec) from exc
 
     @on(Action16.boot_notification)
     async def on_boot_notification(
@@ -173,21 +185,29 @@ class CsmsChargePointV16(ChargePointV16):  # type: ignore[misc]
     async def remote_start(
         self, id_tag: str, connector_id: int | None = None
     ) -> cr16.RemoteStartTransaction:
-        return await self.call(
-            call16.RemoteStartTransaction(id_tag=id_tag, connector_id=connector_id)
+        return await self._call_or_mark_unresponsive(
+            call16.RemoteStartTransaction(id_tag=id_tag, connector_id=connector_id),
+            action="RemoteStartTransaction",
         )
 
     async def remote_stop(self, transaction_id: int) -> cr16.RemoteStopTransaction:
-        return await self.call(call16.RemoteStopTransaction(transaction_id=transaction_id))
+        return await self._call_or_mark_unresponsive(
+            call16.RemoteStopTransaction(transaction_id=transaction_id),
+            action="RemoteStopTransaction",
+        )
 
     async def reset(self, reset_type: ResetType = ResetType.soft) -> cr16.Reset:
-        return await self.call(call16.Reset(type=reset_type))
+        return await self._call_or_mark_unresponsive(call16.Reset(type=reset_type), action="Reset")
 
     async def get_configuration(self, key: list[str] | None = None) -> cr16.GetConfiguration:
-        return await self.call(call16.GetConfiguration(key=key))
+        return await self._call_or_mark_unresponsive(
+            call16.GetConfiguration(key=key), action="GetConfiguration"
+        )
 
     async def change_configuration(self, key: str, value: str) -> cr16.ChangeConfiguration:
-        return await self.call(call16.ChangeConfiguration(key=key, value=value))
+        return await self._call_or_mark_unresponsive(
+            call16.ChangeConfiguration(key=key, value=value), action="ChangeConfiguration"
+        )
 
 
 class CsmsChargePointV201(ChargePointV201):  # type: ignore[misc]
@@ -199,11 +219,23 @@ class CsmsChargePointV201(ChargePointV201):  # type: ignore[misc]
         settings: Settings,
         sessions: SessionStore,
     ) -> None:
-        super().__init__(cp_id, connection)
+        super().__init__(cp_id, connection, response_timeout=settings.call_timeout_sec)
         self.station = station
         self.settings = settings
         self.sessions = sessions
         self.heartbeat_interval = 60
+
+    async def _call_or_mark_unresponsive(self, payload: Any, action: str) -> Any:
+        try:
+            return await self.call(payload)
+        except TimeoutError as exc:
+            self.station.fsm.transition(Trigger.CALL_TIMEOUT)
+            logger.warning(
+                "server-initiated call timed out",
+                action=action,
+                timeout_sec=self.settings.call_timeout_sec,
+            )
+            raise CallTimeout(self.id, action, self.settings.call_timeout_sec) from exc
 
     @on(Action201.boot_notification)
     async def on_boot_notification(
@@ -315,11 +347,11 @@ class CsmsChargePointV201(ChargePointV201):  # type: ignore[misc]
             remote_start_id=remote_start_id,
             evse_id=evse_id,
         )
-        return await self.call(payload)
+        return await self._call_or_mark_unresponsive(payload, action="RequestStartTransaction")
 
     async def request_stop_transaction(self, transaction_id: str) -> cr201.RequestStopTransaction:
         payload = call201.RequestStopTransaction(transaction_id=transaction_id)
-        return await self.call(payload)
+        return await self._call_or_mark_unresponsive(payload, action="RequestStopTransaction")
 
 
 _CONNECTOR_STATUS_TRIGGERS: dict[ConnectorStatusEnumType, Trigger] = {
