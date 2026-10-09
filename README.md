@@ -78,17 +78,31 @@ stateDiagram-v2
 
 ## Measured load
 
-Replace this section with the numbers from your own `make load` run. The
-numbers below are from my laptop and are only indicative:
+| Field                | Value                                                        |
+|----------------------|--------------------------------------------------------------|
+| Host                 | Darwin 25.3.0 arm64, 10 CPU cores, 64 GiB RAM                |
+| Container runtime    | Docker 29.1.3                                                |
+| Stations             | 1 000                                                        |
+| Duration             | 60 s                                                         |
+| CSMS container RSS   | 123.5 MiB (steady, measured via `docker stats --no-stream`)  |
+| Boot round-trip      | p50 311 ms   p95 399 ms   p99 448 ms   max 468 ms            |
+| Heartbeat round-trip | p50 43 ms   p95 214 ms   p99 320 ms   max 368 ms             |
+| Message throughput   | ≈ 100 msg/s sustained (6 000 heartbeats + 1 000 boots / 60s) |
 
-- Host: `uname -a` output and CPU model
-- Stations: 1 000
-- Duration: 60s
-- CSMS process RSS: TBD
-- End-to-end heartbeat p50 / p95 / p99: TBD / TBD / TBD
-- Messages/sec: TBD
+Boot latency includes the TCP + websocket handshake and 1 000 concurrent
+connects landing on the same event loop. Reproduce with:
 
-`make load` writes a JSON report under the current working directory.
+```
+ulimit -n 4096
+docker compose up -d --build
+uv run ocpp-bench sim \
+  --target ws://localhost:9000/ocpp \
+  --scenario soak \
+  --stations 1000 --duration 60 \
+  --no-assert-csms \
+  --report-json load.json
+docker stats --no-stream ocpp-bench-csms-1
+```
 
 ## Running against a third-party CSMS
 

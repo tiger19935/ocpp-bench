@@ -3,7 +3,7 @@ ARG UV_VERSION=0.11.28
 RUN pip install --no-cache-dir "uv==${UV_VERSION}"
 
 WORKDIR /src
-COPY pyproject.toml uv.lock README.md ./
+COPY pyproject.toml uv.lock README.md LICENSE ./
 COPY src ./src
 RUN uv sync --frozen --no-dev && \
     uv build --wheel --out-dir /wheels
