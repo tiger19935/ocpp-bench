@@ -15,6 +15,7 @@ class Station:
     fsm: StationFSM = field(default_factory=StationFSM)
     reconnects: int = 0
     quarantined: bool = False
+    queue_drops: int = 0
 
 
 class StationStore(Protocol):

@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import asyncio
+import contextlib
+import json
 import time
 from datetime import UTC, datetime
 from typing import Any
@@ -37,6 +40,82 @@ from ocpp_bench.logging import get_logger
 from ocpp_bench.protocol import CallTimeout, Trigger
 
 logger = get_logger("csms.handlers")
+
+
+# OCPP message types in the wire format: [MessageTypeId, UniqueId, ...].
+_MSG_CALL = 2
+_MSG_CALL_ERROR = 4
+# RFC 6455 close code for internal error — not actually used; the CALLERROR
+# response below is the OCPP-layer backpressure signal.
+
+
+async def _bounded_pump(
+    cp: ChargePointV16 | ChargePointV201,
+    station: Station,
+    queue_depth: int,
+) -> None:
+    """Receive loop with a bounded queue; overflows get a CALLERROR back.
+
+    The ocpp library's own start() would serialise recv + dispatch in one
+    coroutine, so a slow handler stalls the socket. We split them: one task
+    reads from the websocket, one task drains the queue. When the queue is
+    full we respond CALLERROR InternalError on the Call rather than closing
+    the connection — real chargers reconnect in storms and closing feeds the
+    storm.
+    """
+    inbound: asyncio.Queue[str] = asyncio.Queue(maxsize=queue_depth)
+
+    async def reader() -> None:
+        conn = cp._connection
+        while True:
+            raw = await conn.recv()
+            if isinstance(raw, bytes):
+                raw = raw.decode("utf-8", errors="replace")
+            if not isinstance(raw, str):
+                continue
+            try:
+                inbound.put_nowait(raw)
+            except asyncio.QueueFull:
+                station.queue_drops += 1
+                await _send_queue_full(cp, raw)
+
+    async def worker() -> None:
+        while True:
+            raw = await inbound.get()
+            await cp.route_message(raw)
+
+    r = asyncio.create_task(reader(), name="pump.reader")
+    w = asyncio.create_task(worker(), name="pump.worker")
+    try:
+        await asyncio.wait({r, w}, return_when=asyncio.FIRST_EXCEPTION)
+    finally:
+        for t in (r, w):
+            if not t.done():
+                t.cancel()
+        for t in (r, w):
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await t
+
+
+async def _send_queue_full(cp: ChargePointV16 | ChargePointV201, raw: str) -> None:
+    try:
+        msg = json.loads(raw)
+    except json.JSONDecodeError:
+        return
+    if not (isinstance(msg, list) and len(msg) >= 2 and msg[0] == _MSG_CALL):
+        # Non-Call messages (CallResult/CallError) can't be answered with
+        # CALLERROR. Dropping them is still the right call under backpressure.
+        return
+    unique_id = str(msg[1])
+    error = [
+        _MSG_CALL_ERROR,
+        unique_id,
+        "InternalError",
+        "InboundQueueFull",
+        {},
+    ]
+    await cp._connection.send(json.dumps(error))
+
 
 _STATUS_TRIGGERS: dict[ChargePointStatus, Trigger] = {
     ChargePointStatus.available: Trigger.STATUS_AVAILABLE,

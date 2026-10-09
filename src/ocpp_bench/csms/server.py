@@ -12,7 +12,11 @@ from websockets.http11 import Response
 from websockets.typing import Subprotocol
 
 from ocpp_bench.config import Protocol, Settings
-from ocpp_bench.csms.connection import CsmsChargePointV16, CsmsChargePointV201
+from ocpp_bench.csms.connection import (
+    CsmsChargePointV16,
+    CsmsChargePointV201,
+    _bounded_pump,
+)
 from ocpp_bench.csms.sessions import SessionStore
 from ocpp_bench.csms.stations import InMemoryStationStore, Station, StationStore
 from ocpp_bench.health import FlapDetector, Quarantine
@@ -119,7 +123,7 @@ class CsmsServer:
         cp = _build_chargepoint(cp_id, ws, subprotocol, station, self.settings, self.sessions)
         self._connections[cp_id] = cp
         try:
-            await cp.start()
+            await _bounded_pump(cp, station, self.settings.inbound_queue_depth)
         except ConnectionClosed:
             pass
         finally:
