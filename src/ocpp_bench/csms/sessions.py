@@ -17,20 +17,29 @@ class ActiveTransaction:
 
 @dataclass
 class SessionStore:
+    duplicate_window_sec: float = 10.0
     _lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     _ids: itertools.count[int] = field(default_factory=lambda: itertools.count(1))
     _active: dict[tuple[str, int], ActiveTransaction] = field(default_factory=dict)
     _by_id: dict[int, ActiveTransaction] = field(default_factory=dict)
 
-    async def open(
+    async def open_or_dedupe(
         self,
         charge_point_id: str,
         connector_id: int,
         id_tag: str,
         meter_start: int,
         now: float,
-    ) -> ActiveTransaction:
+    ) -> tuple[ActiveTransaction, bool]:
         async with self._lock:
+            existing = self._active.get((charge_point_id, connector_id))
+            if (
+                existing is not None
+                and existing.id_tag == id_tag
+                and (now - existing.opened_at) <= self.duplicate_window_sec
+            ):
+                return existing, True
+
             txn = ActiveTransaction(
                 transaction_id=next(self._ids),
                 charge_point_id=charge_point_id,
@@ -41,7 +50,24 @@ class SessionStore:
             )
             self._active[(charge_point_id, connector_id)] = txn
             self._by_id[txn.transaction_id] = txn
-            return txn
+            return txn, False
+
+    async def open(
+        self,
+        charge_point_id: str,
+        connector_id: int,
+        id_tag: str,
+        meter_start: int,
+        now: float,
+    ) -> ActiveTransaction:
+        txn, _ = await self.open_or_dedupe(
+            charge_point_id=charge_point_id,
+            connector_id=connector_id,
+            id_tag=id_tag,
+            meter_start=meter_start,
+            now=now,
+        )
+        return txn
 
     async def close(self, transaction_id: int) -> ActiveTransaction | None:
         async with self._lock:

@@ -36,7 +36,7 @@ class CsmsServer:
         return cls(
             settings=settings,
             store=InMemoryStationStore(),
-            sessions=SessionStore(),
+            sessions=SessionStore(duplicate_window_sec=settings.duplicate_start_window_sec),
         )
 
     def get_connection(self, cp_id: str) -> CsmsChargePointV16 | CsmsChargePointV201 | None:

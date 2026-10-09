@@ -133,20 +133,22 @@ class CsmsChargePointV16(ChargePointV16):  # type: ignore[misc]
         timestamp: str,
         **_: Any,
     ) -> cr16.StartTransaction:
-        txn = await self.sessions.open(
+        txn, duplicate = await self.sessions.open_or_dedupe(
             charge_point_id=self.id,
             connector_id=connector_id,
             id_tag=id_tag,
             meter_start=meter_start,
             now=time.monotonic(),
         )
-        self.station.fsm.transition(Trigger.START_TXN)
+        if not duplicate:
+            self.station.fsm.transition(Trigger.START_TXN)
         logger.info(
             "start transaction",
             transaction_id=txn.transaction_id,
             connector_id=connector_id,
             id_tag=id_tag,
             timestamp=timestamp,
+            duplicate=duplicate,
         )
         return cr16.StartTransaction(
             transaction_id=txn.transaction_id,
