@@ -46,8 +46,6 @@ logger = get_logger("csms.handlers")
 # OCPP message types in the wire format: [MessageTypeId, UniqueId, ...].
 _MSG_CALL = 2
 _MSG_CALL_ERROR = 4
-# RFC 6455 close code for internal error — not actually used; the CALLERROR
-# response below is the OCPP-layer backpressure signal.
 
 
 async def _bounded_pump(
