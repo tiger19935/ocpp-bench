@@ -79,6 +79,15 @@ stateDiagram-v2
 
 ## Measured load
 
+Soak and burst exercise different things. Soak keeps 1 000 stations
+heartbeating on a 10 s interval; its throughput ceiling is the
+interval, not the CSMS — the number below is bounded by the sim's own
+schedule, not by anything the server does. Burst drives each station
+at 1 Hz Heartbeat plus 0.5 Hz MeterValues under an active transaction,
+which is where the CSMS actually works.
+
+### Soak
+
 | Field                | Value                                                        |
 |----------------------|--------------------------------------------------------------|
 | Host                 | Darwin 25.3.0 arm64, 10 CPU cores, 64 GiB RAM                |
@@ -88,20 +97,35 @@ stateDiagram-v2
 | CSMS container RSS   | 123.5 MiB (steady, measured via `docker stats --no-stream`)  |
 | Boot round-trip      | p50 311 ms   p95 399 ms   p99 448 ms   max 468 ms            |
 | Heartbeat round-trip | p50 43 ms   p95 214 ms   p99 320 ms   max 368 ms             |
-| Message throughput   | ≈ 100 msg/s sustained (6 000 heartbeats + 1 000 boots / 60s) |
+| Message throughput   | ≈ 100 msg/s (6 000 heartbeats + 1 000 boots / 60 s) — this is the sim's heartbeat interval, not the server's limit |
 
-Boot latency includes the TCP + websocket handshake and 1 000 concurrent
-connects landing on the same event loop. Reproduce with:
+### Burst (`make load-burst`)
+
+| Field                | Value                                                        |
+|----------------------|--------------------------------------------------------------|
+| Host                 | Darwin 25.3.0 arm64, 10 CPU cores, 64 GiB RAM                |
+| Container runtime    | Docker 29.1.3                                                |
+| Stations             | 1 000                                                        |
+| Duration             | 60 s                                                         |
+| CSMS container RSS   | 129.2 MiB (steady)                                           |
+| Message throughput   | ≈ 1 470 msg/s sustained (59 194 Heartbeats + 29 000 MeterValues over 60 s, plus boot/status/start/stop per station) |
+| Heartbeat round-trip | p50 4 ms   p95 46 ms   p99 239 ms   max 281 ms               |
+| MeterValues ack      | p50 7 ms   p95 48 ms   p99 101 ms   max 136 ms               |
+| CALLERROR count      | 0                                                            |
+| Queue drops          | 0                                                            |
+| Stations finishing connected | 1 000 / 1 000                                        |
+
+What limited it: at 1 000 stations the single-event-loop CSMS held the
+p95 under 50 ms with room to spare. The p99 heartbeat tail (239 ms)
+tracks aligned wake-ups when many 1-s heartbeat timers fire together —
+asyncio's scheduler fairness, not CPU saturation. The container's CPU
+stayed well under one core. Horizontal scaling, not vertical, is where
+this would go next. Reproduce with:
 
 ```
 ulimit -n 4096
 docker compose up -d --build
-uv run ocpp-bench sim \
-  --target ws://localhost:9000/ocpp \
-  --scenario soak \
-  --stations 1000 --duration 60 \
-  --no-assert-csms \
-  --report-json load.json
+make load-burst
 docker stats --no-stream ocpp-bench-csms-1
 ```
 
