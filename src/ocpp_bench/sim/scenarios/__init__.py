@@ -47,7 +47,7 @@ _ADAPTER: TypeAdapter[
     | OutOfOrderMeterValuesConfig
     | OversizedMeterValuesConfig
     | BootLoopConfig
-] = TypeAdapter(ScenarioConfig)  # type: ignore[arg-type]
+] = TypeAdapter(ScenarioConfig)  # type: ignore[arg-type, unused-ignore]
 
 
 _SCENARIO_BY_CONFIG: dict[type, type[Scenario]] = {
