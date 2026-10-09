@@ -12,7 +12,7 @@ from websockets.typing import Subprotocol
 
 from ocpp_bench.config import Protocol, Settings
 from ocpp_bench.csms.connection import CsmsChargePointV16, CsmsChargePointV201
-from ocpp_bench.csms.stations import InMemoryStationStore, StationStore
+from ocpp_bench.csms.stations import InMemoryStationStore, Station, StationStore
 from ocpp_bench.logging import bind_station, clear, get_logger, unbind_station
 from ocpp_bench.protocol import Trigger
 
@@ -87,7 +87,7 @@ class CsmsServer:
         bind_station(cp_id, protocol=str(subprotocol))
         logger.info("station connected", path=path)
 
-        cp = _build_chargepoint(cp_id, ws, subprotocol)
+        cp = _build_chargepoint(cp_id, ws, subprotocol, station, self.settings)
         try:
             await cp.start()
         except ConnectionClosed:
@@ -125,11 +125,15 @@ class CsmsServer:
 
 
 def _build_chargepoint(
-    cp_id: str, ws: ServerConnection, subprotocol: Subprotocol
+    cp_id: str,
+    ws: ServerConnection,
+    subprotocol: Subprotocol,
+    station: Station,
+    settings: Settings,
 ) -> CsmsChargePointV16 | CsmsChargePointV201:
     if subprotocol == _SUBPROTOCOL_16:
-        return CsmsChargePointV16(cp_id, ws)
-    return CsmsChargePointV201(cp_id, ws)
+        return CsmsChargePointV16(cp_id, ws, station, settings)
+    return CsmsChargePointV201(cp_id, ws, station, settings)
 
 
 def path_regex() -> re.Pattern[str]:

@@ -67,6 +67,13 @@ module = ["ocpp.*"]
 ignore_missing_imports = true
 follow_imports = "silent"
 
+# @on(Action.xxx) decorators from the ocpp library resolve to Callable[..., Any]
+# under strict mode; mypy flags the handler as untyped. Narrowly disable the
+# check in the two modules that mount handlers.
+[[tool.mypy.overrides]]
+module = ["ocpp_bench.csms.connection"]
+disallow_untyped_decorators = false
+
 [tool.pytest.ini_options]
 addopts = "-ra -q --strict-markers --strict-config"
 asyncio_mode = "auto"
