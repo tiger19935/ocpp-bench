@@ -39,7 +39,7 @@ class Trigger(StrEnum):
 
 
 # Explicit allowed transitions. Any (state, trigger) pair not present here is
-# rejected without changing state. Keeping this a plain dict (not generated
+# rejected without changing state. Keeping this a plain dict (not built up
 # from decorators) means a reviewer can read the whole machine in one screen.
 _T: Final[dict[tuple[StationState, Trigger], StationState]] = {
     # Connection lifecycle.

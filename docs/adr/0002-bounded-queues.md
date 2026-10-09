@@ -21,7 +21,7 @@ connection open.
 ## Alternatives considered
 
 - Close the websocket on overflow. Rejected: closing feeds the reconnect
-  storm. Chargers reconnect immediately and resume flooding.
+  storm. Chargers reconnect immediately and keep flooding.
 - Grow the queue. Rejected: unbounded buffering only delays the problem,
   trades memory for latency, and masks the misbehaviour from metrics.
 

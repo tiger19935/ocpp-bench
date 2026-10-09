@@ -7,7 +7,7 @@
 | reconnect-storm               | All stations recover within recover_within_sec                                        | `tests/integration/test_sim_scenarios::test_reconnect_storm_recovers`     |
 | flapping-charger              | One flapper is quarantined; stable stations' p95 does not degrade >20%                | `tests/integration/test_sim_scenarios::test_flapping_isolation`           |
 | slow-consumer                 | Server-initiated call times out at `call_timeout_sec`; station marked Unresponsive    | `tests/integration/test_call_timeout`                                     |
-| session recovery              | Reconnect resumes txn; late StopTransaction accepted and flagged                      | `tests/integration/test_session_recovery`                                 |
+| session recovery              | Reconnect keeps the live txn; late StopTransaction accepted and flagged               | `tests/integration/test_session_recovery`                                 |
 | duplicate StartTransaction    | Same transactionId returned within duplicate window                                   | `tests/integration/test_sim_scenarios::test_duplicate_start_same_id`      |
 | out-of-order MeterValues      | Accepted as-is; audit retains original timestamps                                     | `tests/integration/test_sim_scenarios::test_out_of_order_metervalues`     |
 | oversized MeterValues         | Single large payload accepted up to size_kb                                           | `tests/integration/test_sim_scenarios::test_oversized_metervalues`        |

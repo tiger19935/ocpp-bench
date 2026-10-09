@@ -15,7 +15,7 @@ async def _boot(cp: Cp16) -> None:
     await cp.call(call.BootNotification(charge_point_vendor="v", charge_point_model="m"))
 
 
-async def test_reconnect_resumes_transaction(
+async def test_reconnect_continues_transaction(
     csms_server: tuple[CsmsServer, int, asyncio.Task[None]],
 ) -> None:
     server, port, _ = csms_server
