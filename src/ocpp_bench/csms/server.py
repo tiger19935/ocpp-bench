@@ -6,12 +6,14 @@ import time
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 
+from aiohttp import web
 from websockets.asyncio.server import ServerConnection, serve
 from websockets.exceptions import ConnectionClosed
 from websockets.http11 import Response
 from websockets.typing import Subprotocol
 
 from ocpp_bench.config import Protocol, Settings
+from ocpp_bench.csms.admin import build_admin_app
 from ocpp_bench.csms.connection import (
     CsmsChargePointV16,
     CsmsChargePointV201,
@@ -150,29 +152,43 @@ class CsmsServer:
             clear()
 
     async def serve(self, stop: asyncio.Future[None] | None = None) -> None:
-        async with serve(
-            self._handler,
+        admin_runner = web.AppRunner(build_admin_app(self))
+        await admin_runner.setup()
+        admin_site = web.TCPSite(
+            admin_runner, host=self.settings.host, port=self.settings.admin_port
+        )
+        await admin_site.start()
+        logger.info(
+            "admin listening",
             host=self.settings.host,
-            port=self.settings.port,
-            subprotocols=self._supported_subprotocols(),
-            select_subprotocol=self._select_subprotocol,
-            process_request=self._process_request,
-            # Our own bounded queue sits one layer above; the websockets-layer
-            # queue stays small to shed obviously broken clients.
-            max_queue=32,
-            ping_interval=20,
-            ping_timeout=20,
-        ) as server:
-            logger.info(
-                "csms listening",
+            port=self.settings.admin_port,
+        )
+        try:
+            async with serve(
+                self._handler,
                 host=self.settings.host,
                 port=self.settings.port,
-                protocols=[str(sp) for sp in self._supported_subprotocols()],
-            )
-            if stop is None:
-                await server.serve_forever()
-            else:
-                await stop
+                subprotocols=self._supported_subprotocols(),
+                select_subprotocol=self._select_subprotocol,
+                process_request=self._process_request,
+                # Our own bounded queue sits one layer above; the websockets-layer
+                # queue stays small to shed obviously broken clients.
+                max_queue=32,
+                ping_interval=20,
+                ping_timeout=20,
+            ) as server:
+                logger.info(
+                    "csms listening",
+                    host=self.settings.host,
+                    port=self.settings.port,
+                    protocols=[str(sp) for sp in self._supported_subprotocols()],
+                )
+                if stop is None:
+                    await server.serve_forever()
+                else:
+                    await stop
+        finally:
+            await admin_runner.cleanup()
 
 
 def _build_chargepoint(

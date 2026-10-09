@@ -21,9 +21,11 @@ async def _make_server(
     **overrides: object,
 ) -> tuple[CsmsServer, int, asyncio.Future[None], asyncio.Task[None]]:
     port = _free_port()
+    admin_port = _free_port()
     base: dict[str, object] = {
         "host": "127.0.0.1",
         "port": port,
+        "admin_port": admin_port,
         "protocol": Protocol.BOTH,
         "log_json": False,
     }
@@ -47,7 +49,14 @@ async def _make_server(
 @pytest_asyncio.fixture
 async def csms_server() -> AsyncIterator[tuple[CsmsServer, int, asyncio.Task[None]]]:
     port = _free_port()
-    settings = Settings(host="127.0.0.1", port=port, protocol=Protocol.BOTH, log_json=False)
+    admin_port = _free_port()
+    settings = Settings(
+        host="127.0.0.1",
+        port=port,
+        admin_port=admin_port,
+        protocol=Protocol.BOTH,
+        log_json=False,
+    )
     server = CsmsServer.from_settings(settings)
     stop: asyncio.Future[None] = asyncio.get_running_loop().create_future()
     task = asyncio.create_task(server.serve(stop))
