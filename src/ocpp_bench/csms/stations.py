@@ -14,6 +14,7 @@ class Station:
     protocol: str  # "ocpp1.6" | "ocpp2.0.1"
     fsm: StationFSM = field(default_factory=StationFSM)
     reconnects: int = 0
+    quarantined: bool = False
 
 
 class StationStore(Protocol):

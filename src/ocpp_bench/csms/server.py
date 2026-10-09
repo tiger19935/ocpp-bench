@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import re
+import time
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 
@@ -14,6 +15,7 @@ from ocpp_bench.config import Protocol, Settings
 from ocpp_bench.csms.connection import CsmsChargePointV16, CsmsChargePointV201
 from ocpp_bench.csms.sessions import SessionStore
 from ocpp_bench.csms.stations import InMemoryStationStore, Station, StationStore
+from ocpp_bench.health import FlapDetector, Quarantine
 from ocpp_bench.logging import bind_station, clear, get_logger, unbind_station
 from ocpp_bench.protocol import Trigger
 
@@ -29,6 +31,8 @@ class CsmsServer:
     settings: Settings
     store: StationStore
     sessions: SessionStore
+    flap: FlapDetector
+    quarantine: Quarantine
     _connections: dict[str, CsmsChargePointV16 | CsmsChargePointV201] = field(default_factory=dict)
 
     @classmethod
@@ -37,6 +41,8 @@ class CsmsServer:
             settings=settings,
             store=InMemoryStationStore(),
             sessions=SessionStore(duplicate_window_sec=settings.duplicate_start_window_sec),
+            flap=FlapDetector(window_sec=settings.flap_window_sec, limit=settings.flap_limit),
+            quarantine=Quarantine(clear_after_sec=settings.quarantine_clear_sec),
         )
 
     def get_connection(self, cp_id: str) -> CsmsChargePointV16 | CsmsChargePointV201 | None:
@@ -96,6 +102,19 @@ class CsmsServer:
         station.fsm.transition(Trigger.WS_OPEN)
         bind_station(cp_id, protocol=str(subprotocol))
         logger.info("station connected", path=path)
+
+        now = time.monotonic()
+        self.flap.record(cp_id, now)
+        if self.flap.is_flapping(cp_id, now) or self.quarantine.is_quarantined(cp_id):
+            wait = self.quarantine.apply(cp_id, now)
+            station.quarantined = True
+            station.fsm.transition(Trigger.QUARANTINE_SET)
+            logger.warning(
+                "station quarantined",
+                flap_rate=self.flap.rate(cp_id, now),
+                backoff_sec=wait,
+            )
+            await asyncio.sleep(wait)
 
         cp = _build_chargepoint(cp_id, ws, subprotocol, station, self.settings, self.sessions)
         self._connections[cp_id] = cp
