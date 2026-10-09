@@ -60,7 +60,7 @@ class BootLoopConfig(BaseModel):
     iterations: int = Field(default=10, ge=1)
 
 
-class _SlowCp(Cp16):  # type: ignore[misc]
+class _SlowCp(Cp16):  # type: ignore[misc]  # ocpp lib has no py.typed; base resolves to Any under strict mypy
     def __init__(self, cp_id: str, ws: object, delay: float) -> None:
         super().__init__(cp_id, ws)
         self._delay = delay

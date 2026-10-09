@@ -40,11 +40,10 @@ _AnyConfig = (
     | BurstConfig
 )
 ScenarioConfig = Annotated[_AnyConfig, Field(discriminator="type")]
-# TypeAdapter accepts Annotated[Union, Field(discriminator=...)] at runtime,
-# but mypy's TypeAdapter[T] overload only accepts a plain type[T]. The ignore
-# documents a known pydantic / mypy mismatch; the unused-ignore pair keeps it
-# valid under both macOS and Linux mypy (Linux stops reporting the arg-type).
-_ADAPTER: TypeAdapter[_AnyConfig] = TypeAdapter(ScenarioConfig)  # type: ignore[arg-type, unused-ignore]
+# pydantic 2.14 accepts Annotated[Union, Field(discriminator=...)] at runtime, but
+# mypy's TypeAdapter[T] overloads only accept a plain type[T]; unused-ignore keeps
+# the ignore valid on Linux where mypy stops reporting the arg-type complaint.
+_ADAPTER: TypeAdapter[_AnyConfig] = TypeAdapter(ScenarioConfig)  # type: ignore[arg-type, unused-ignore]  # pydantic / mypy mismatch on Annotated discriminated unions
 
 
 _FACTORIES: dict[type[_AnyConfig], Callable[[_AnyConfig], Scenario]] = {

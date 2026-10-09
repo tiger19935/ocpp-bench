@@ -133,7 +133,7 @@ def _utcnow_iso() -> str:
     return datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
-class CsmsChargePointV16(ChargePointV16):  # type: ignore[misc]
+class CsmsChargePointV16(ChargePointV16):  # type: ignore[misc]  # ocpp lib has no py.typed; base resolves to Any under strict mypy
     protocol_label = "ocpp1.6"
 
     def __init__(
@@ -331,7 +331,7 @@ class CsmsChargePointV16(ChargePointV16):  # type: ignore[misc]
         )
 
 
-class CsmsChargePointV201(ChargePointV201):  # type: ignore[misc]
+class CsmsChargePointV201(ChargePointV201):  # type: ignore[misc]  # ocpp lib has no py.typed; base resolves to Any under strict mypy
     protocol_label = "ocpp2.0.1"
 
     def __init__(

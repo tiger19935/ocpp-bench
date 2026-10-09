@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from enum import StrEnum
-from pathlib import Path
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -38,9 +37,3 @@ class Settings(BaseSettings):
     quarantine_clear_sec: float = Field(default=300.0, gt=0)
 
     duplicate_start_window_sec: float = Field(default=10.0, gt=0)
-
-
-def load_settings(env_file: Path | None = None) -> Settings:
-    if env_file is None:
-        return Settings()
-    return Settings(_env_file=env_file)  # type: ignore[call-arg]

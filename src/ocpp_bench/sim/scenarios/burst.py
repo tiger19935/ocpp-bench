@@ -6,6 +6,7 @@ import time
 from dataclasses import dataclass
 from typing import ClassVar, Literal
 
+from ocpp.v16 import ChargePoint as Cp16
 from ocpp.v16 import call as call16
 from ocpp.v16.enums import ChargePointStatus
 from pydantic import BaseModel, ConfigDict, Field
@@ -39,8 +40,8 @@ class _Agg:
     lock: asyncio.Lock
 
 
-async def _send_metervalue(cp: object, txn: int) -> None:
-    await cp.call(  # type: ignore[attr-defined]
+async def _send_metervalue(cp: Cp16, txn: int) -> None:
+    await cp.call(
         call16.MeterValues(
             connector_id=1,
             meter_value=[
