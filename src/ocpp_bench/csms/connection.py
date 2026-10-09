@@ -11,9 +11,17 @@ from ocpp.v16.datatypes import IdTagInfo
 from ocpp.v16.enums import Action as Action16
 from ocpp.v16.enums import AuthorizationStatus, ChargePointStatus, RegistrationStatus
 from ocpp.v201 import ChargePoint as ChargePointV201
+from ocpp.v201 import call as call201
 from ocpp.v201 import call_result as cr201
+from ocpp.v201.datatypes import IdTokenInfoType
 from ocpp.v201.enums import Action as Action201
-from ocpp.v201.enums import RegistrationStatusEnumType
+from ocpp.v201.enums import (
+    AuthorizationStatusEnumType,
+    ConnectorStatusEnumType,
+    RegistrationStatusEnumType,
+    RequestStartStopStatusEnumType,
+    TransactionEventEnumType,
+)
 from websockets.asyncio.server import ServerConnection
 
 from ocpp_bench.config import Settings
@@ -195,3 +203,118 @@ class CsmsChargePointV201(ChargePointV201):  # type: ignore[misc]
     @on(Action201.heartbeat)
     async def on_heartbeat(self, **_: Any) -> cr201.Heartbeat:
         return cr201.Heartbeat(current_time=_utcnow_iso())
+
+    @on(Action201.authorize)
+    async def on_authorize(self, id_token: dict[str, Any], **_: Any) -> cr201.Authorize:
+        logger.info("authorize", id_token=id_token.get("id_token"))
+        return cr201.Authorize(
+            id_token_info=IdTokenInfoType(status=AuthorizationStatusEnumType.accepted)
+        )
+
+    @on(Action201.status_notification)
+    async def on_status_notification(
+        self,
+        timestamp: str,
+        connector_status: str,
+        evse_id: int,
+        connector_id: int,
+        **_: Any,
+    ) -> cr201.StatusNotification:
+        trg = _CONNECTOR_STATUS_TRIGGERS.get(ConnectorStatusEnumType(connector_status))
+        if trg is not None:
+            self.station.fsm.transition(trg)
+        logger.info(
+            "status notification",
+            evse_id=evse_id,
+            connector_id=connector_id,
+            connector_status=connector_status,
+            timestamp=timestamp,
+            fsm=self.station.fsm.state,
+        )
+        return cr201.StatusNotification()
+
+    @on(Action201.meter_values)
+    async def on_meter_values(
+        self,
+        evse_id: int,
+        meter_value: list[dict[str, Any]],
+        **_: Any,
+    ) -> cr201.MeterValues:
+        logger.debug("meter values", evse_id=evse_id, count=len(meter_value))
+        return cr201.MeterValues()
+
+    @on(Action201.transaction_event)
+    async def on_transaction_event(
+        self,
+        event_type: str,
+        timestamp: str,
+        trigger_reason: str,
+        seq_no: int,
+        transaction_info: dict[str, Any],
+        **kwargs: Any,
+    ) -> cr201.TransactionEvent:
+        txn_id = transaction_info.get("transaction_id")
+        event = TransactionEventEnumType(event_type)
+        if event is TransactionEventEnumType.started:
+            evse = kwargs.get("evse", {}) or {}
+            connector_id = int(evse.get("connector_id", 1))
+            id_token = (kwargs.get("id_token") or {}).get("id_token", "")
+            await self.sessions.open(
+                charge_point_id=self.id,
+                connector_id=connector_id,
+                id_tag=id_token,
+                meter_start=0,
+                now=time.monotonic(),
+            )
+            self.station.fsm.transition(Trigger.START_TXN)
+        elif event is TransactionEventEnumType.ended and txn_id is not None:
+            with_int = _parse_int_or_none(txn_id)
+            if with_int is not None:
+                await self.sessions.close(with_int)
+            self.station.fsm.transition(Trigger.STOP_TXN)
+        logger.info(
+            "transaction event",
+            event_type=event_type,
+            trigger_reason=trigger_reason,
+            seq_no=seq_no,
+            transaction_id=txn_id,
+            timestamp=timestamp,
+        )
+        return cr201.TransactionEvent()
+
+    async def request_start_transaction(
+        self, id_token: str, remote_start_id: int, evse_id: int | None = None
+    ) -> cr201.RequestStartTransaction:
+        payload = call201.RequestStartTransaction(
+            id_token={"id_token": id_token, "type": "Central"},
+            remote_start_id=remote_start_id,
+            evse_id=evse_id,
+        )
+        return await self.call(payload)
+
+    async def request_stop_transaction(self, transaction_id: str) -> cr201.RequestStopTransaction:
+        payload = call201.RequestStopTransaction(transaction_id=transaction_id)
+        return await self.call(payload)
+
+
+_CONNECTOR_STATUS_TRIGGERS: dict[ConnectorStatusEnumType, Trigger] = {
+    ConnectorStatusEnumType.available: Trigger.STATUS_AVAILABLE,
+    ConnectorStatusEnumType.occupied: Trigger.STATUS_CHARGING,
+    ConnectorStatusEnumType.faulted: Trigger.STATUS_FAULTED,
+    ConnectorStatusEnumType.unavailable: Trigger.STATUS_AVAILABLE,
+    ConnectorStatusEnumType.reserved: Trigger.STATUS_AVAILABLE,
+}
+
+
+def _parse_int_or_none(value: object) -> int | None:
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str):
+        try:
+            return int(value)
+        except ValueError:
+            return None
+    return None
+
+
+_ = RequestStartStopStatusEnumType  # used in server-initiated flows
