@@ -37,6 +37,7 @@ from ocpp_bench.config import Settings
 from ocpp_bench.csms.sessions import SessionStore
 from ocpp_bench.csms.stations import Station
 from ocpp_bench.logging import get_logger
+from ocpp_bench.metrics import Metrics
 from ocpp_bench.protocol import CallTimeout, Trigger
 
 logger = get_logger("csms.handlers")
@@ -53,6 +54,7 @@ async def _bounded_pump(
     cp: ChargePointV16 | ChargePointV201,
     station: Station,
     queue_depth: int,
+    metrics: Metrics,
 ) -> None:
     """Receive loop with a bounded queue; overflows get a CALLERROR back.
 
@@ -77,6 +79,7 @@ async def _bounded_pump(
                 inbound.put_nowait(raw)
             except asyncio.QueueFull:
                 station.queue_drops += 1
+                metrics.queue_drops_total.labels(charge_point_id=station.charge_point_id).inc()
                 await _send_queue_full(cp, raw)
 
     async def worker() -> None:
@@ -133,6 +136,8 @@ def _utcnow_iso() -> str:
 
 
 class CsmsChargePointV16(ChargePointV16):  # type: ignore[misc]
+    protocol_label = "ocpp1.6"
+
     def __init__(
         self,
         cp_id: str,
@@ -140,24 +145,43 @@ class CsmsChargePointV16(ChargePointV16):  # type: ignore[misc]
         station: Station,
         settings: Settings,
         sessions: SessionStore,
+        metrics: Metrics,
     ) -> None:
         super().__init__(cp_id, connection, response_timeout=settings.call_timeout_sec)
         self.station = station
         self.settings = settings
         self.sessions = sessions
+        self.metrics = metrics
         self.heartbeat_interval = 60
 
+    def _observe_inbound(self, action: str) -> None:
+        self.metrics.messages_total.labels(
+            direction="in", action=action, protocol=self.protocol_label
+        ).inc()
+
     async def _call_or_mark_unresponsive(self, payload: Any, action: str) -> Any:
+        self.metrics.messages_total.labels(
+            direction="out", action=action, protocol=self.protocol_label
+        ).inc()
+        started = time.monotonic()
         try:
-            return await self.call(payload)
+            result = await self.call(payload)
         except TimeoutError as exc:
             self.station.fsm.transition(Trigger.CALL_TIMEOUT)
+            self.metrics.call_timeouts_total.labels(
+                action=action, protocol=self.protocol_label
+            ).inc()
             logger.warning(
                 "server-initiated call timed out",
                 action=action,
                 timeout_sec=self.settings.call_timeout_sec,
             )
             raise CallTimeout(self.id, action, self.settings.call_timeout_sec) from exc
+        else:
+            self.metrics.call_latency_seconds.labels(
+                action=action, protocol=self.protocol_label
+            ).observe(time.monotonic() - started)
+            return result
 
     @on(Action16.boot_notification)
     async def on_boot_notification(
@@ -166,6 +190,7 @@ class CsmsChargePointV16(ChargePointV16):  # type: ignore[misc]
         charge_point_model: str,
         **_: Any,
     ) -> cr16.BootNotification:
+        self._observe_inbound("BootNotification")
         self.station.fsm.transition(Trigger.BOOT_ACCEPTED)
         logger.info("boot accepted", vendor=charge_point_vendor, model=charge_point_model)
         return cr16.BootNotification(
@@ -176,10 +201,12 @@ class CsmsChargePointV16(ChargePointV16):  # type: ignore[misc]
 
     @on(Action16.heartbeat)
     async def on_heartbeat(self, **_: Any) -> cr16.Heartbeat:
+        self._observe_inbound("Heartbeat")
         return cr16.Heartbeat(current_time=_utcnow_iso())
 
     @on(Action16.authorize)
     async def on_authorize(self, id_tag: str, **_: Any) -> cr16.Authorize:
+        self._observe_inbound("Authorize")
         logger.info("authorize", id_tag=id_tag)
         return cr16.Authorize(id_tag_info=IdTagInfo(status=AuthorizationStatus.accepted))
 
@@ -191,6 +218,7 @@ class CsmsChargePointV16(ChargePointV16):  # type: ignore[misc]
         status: str,
         **_: Any,
     ) -> cr16.StatusNotification:
+        self._observe_inbound("StatusNotification")
         trg = _STATUS_TRIGGERS.get(ChargePointStatus(status))
         if trg is not None:
             self.station.fsm.transition(trg)
@@ -212,6 +240,7 @@ class CsmsChargePointV16(ChargePointV16):  # type: ignore[misc]
         timestamp: str,
         **_: Any,
     ) -> cr16.StartTransaction:
+        self._observe_inbound("StartTransaction")
         txn, duplicate = await self.sessions.open_or_dedupe(
             charge_point_id=self.id,
             connector_id=connector_id,
@@ -242,6 +271,7 @@ class CsmsChargePointV16(ChargePointV16):  # type: ignore[misc]
         transaction_id: int,
         **_: Any,
     ) -> cr16.StopTransaction:
+        self._observe_inbound("StopTransaction")
         txn = await self.sessions.close(transaction_id)
         self.station.fsm.transition(Trigger.STOP_TXN)
         if txn is None:
@@ -271,6 +301,7 @@ class CsmsChargePointV16(ChargePointV16):  # type: ignore[misc]
         meter_value: list[dict[str, Any]],
         **_: Any,
     ) -> cr16.MeterValues:
+        self._observe_inbound("MeterValues")
         logger.debug("meter values", connector_id=connector_id, count=len(meter_value))
         return cr16.MeterValues()
 
@@ -303,6 +334,8 @@ class CsmsChargePointV16(ChargePointV16):  # type: ignore[misc]
 
 
 class CsmsChargePointV201(ChargePointV201):  # type: ignore[misc]
+    protocol_label = "ocpp2.0.1"
+
     def __init__(
         self,
         cp_id: str,
@@ -310,24 +343,43 @@ class CsmsChargePointV201(ChargePointV201):  # type: ignore[misc]
         station: Station,
         settings: Settings,
         sessions: SessionStore,
+        metrics: Metrics,
     ) -> None:
         super().__init__(cp_id, connection, response_timeout=settings.call_timeout_sec)
         self.station = station
         self.settings = settings
         self.sessions = sessions
+        self.metrics = metrics
         self.heartbeat_interval = 60
 
+    def _observe_inbound(self, action: str) -> None:
+        self.metrics.messages_total.labels(
+            direction="in", action=action, protocol=self.protocol_label
+        ).inc()
+
     async def _call_or_mark_unresponsive(self, payload: Any, action: str) -> Any:
+        self.metrics.messages_total.labels(
+            direction="out", action=action, protocol=self.protocol_label
+        ).inc()
+        started = time.monotonic()
         try:
-            return await self.call(payload)
+            result = await self.call(payload)
         except TimeoutError as exc:
             self.station.fsm.transition(Trigger.CALL_TIMEOUT)
+            self.metrics.call_timeouts_total.labels(
+                action=action, protocol=self.protocol_label
+            ).inc()
             logger.warning(
                 "server-initiated call timed out",
                 action=action,
                 timeout_sec=self.settings.call_timeout_sec,
             )
             raise CallTimeout(self.id, action, self.settings.call_timeout_sec) from exc
+        else:
+            self.metrics.call_latency_seconds.labels(
+                action=action, protocol=self.protocol_label
+            ).observe(time.monotonic() - started)
+            return result
 
     @on(Action201.boot_notification)
     async def on_boot_notification(
@@ -336,6 +388,7 @@ class CsmsChargePointV201(ChargePointV201):  # type: ignore[misc]
         reason: str,
         **_: Any,
     ) -> cr201.BootNotification:
+        self._observe_inbound("BootNotification")
         self.station.fsm.transition(Trigger.BOOT_ACCEPTED)
         logger.info(
             "boot accepted",
@@ -351,10 +404,12 @@ class CsmsChargePointV201(ChargePointV201):  # type: ignore[misc]
 
     @on(Action201.heartbeat)
     async def on_heartbeat(self, **_: Any) -> cr201.Heartbeat:
+        self._observe_inbound("Heartbeat")
         return cr201.Heartbeat(current_time=_utcnow_iso())
 
     @on(Action201.authorize)
     async def on_authorize(self, id_token: dict[str, Any], **_: Any) -> cr201.Authorize:
+        self._observe_inbound("Authorize")
         logger.info("authorize", id_token=id_token.get("id_token"))
         return cr201.Authorize(
             id_token_info=IdTokenInfoType(status=AuthorizationStatusEnumType.accepted)
@@ -369,6 +424,7 @@ class CsmsChargePointV201(ChargePointV201):  # type: ignore[misc]
         connector_id: int,
         **_: Any,
     ) -> cr201.StatusNotification:
+        self._observe_inbound("StatusNotification")
         trg = _CONNECTOR_STATUS_TRIGGERS.get(ConnectorStatusEnumType(connector_status))
         if trg is not None:
             self.station.fsm.transition(trg)
@@ -389,6 +445,7 @@ class CsmsChargePointV201(ChargePointV201):  # type: ignore[misc]
         meter_value: list[dict[str, Any]],
         **_: Any,
     ) -> cr201.MeterValues:
+        self._observe_inbound("MeterValues")
         logger.debug("meter values", evse_id=evse_id, count=len(meter_value))
         return cr201.MeterValues()
 
@@ -402,6 +459,7 @@ class CsmsChargePointV201(ChargePointV201):  # type: ignore[misc]
         transaction_info: dict[str, Any],
         **kwargs: Any,
     ) -> cr201.TransactionEvent:
+        self._observe_inbound("TransactionEvent")
         txn_id = transaction_info.get("transaction_id")
         event = TransactionEventEnumType(event_type)
         if event is TransactionEventEnumType.started:

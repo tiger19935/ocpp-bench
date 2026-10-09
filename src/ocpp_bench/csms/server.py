@@ -21,6 +21,7 @@ from ocpp_bench.csms.sessions import SessionStore
 from ocpp_bench.csms.stations import InMemoryStationStore, Station, StationStore
 from ocpp_bench.health import FlapDetector, Quarantine
 from ocpp_bench.logging import bind_station, clear, get_logger, unbind_station
+from ocpp_bench.metrics import Metrics, build_metrics
 from ocpp_bench.protocol import Trigger
 
 logger = get_logger("csms.server")
@@ -37,6 +38,7 @@ class CsmsServer:
     sessions: SessionStore
     flap: FlapDetector
     quarantine: Quarantine
+    metrics: Metrics
     _connections: dict[str, CsmsChargePointV16 | CsmsChargePointV201] = field(default_factory=dict)
 
     @classmethod
@@ -47,6 +49,7 @@ class CsmsServer:
             sessions=SessionStore(duplicate_window_sec=settings.duplicate_start_window_sec),
             flap=FlapDetector(window_sec=settings.flap_window_sec, limit=settings.flap_limit),
             quarantine=Quarantine(clear_after_sec=settings.quarantine_clear_sec),
+            metrics=build_metrics(),
         )
 
     def get_connection(self, cp_id: str) -> CsmsChargePointV16 | CsmsChargePointV201 | None:
@@ -103,13 +106,20 @@ class CsmsServer:
             return
 
         station = await self.store.upsert(cp_id, protocol=str(subprotocol))
+        was_connected_before = station.reconnects > 0
         station.fsm.transition(Trigger.WS_OPEN)
         bind_station(cp_id, protocol=str(subprotocol))
         logger.info("station connected", path=path)
 
+        if was_connected_before:
+            self.metrics.reconnects_total.labels(protocol=str(subprotocol)).inc()
+        self.metrics.stations_connected.inc()
+
         now = time.monotonic()
         self.flap.record(cp_id, now)
         if self.flap.is_flapping(cp_id, now) or self.quarantine.is_quarantined(cp_id):
+            if not station.quarantined:
+                self.metrics.stations_quarantined.inc()
             wait = self.quarantine.apply(cp_id, now)
             station.quarantined = True
             station.fsm.transition(Trigger.QUARANTINE_SET)
@@ -120,15 +130,21 @@ class CsmsServer:
             )
             await asyncio.sleep(wait)
 
-        cp = _build_chargepoint(cp_id, ws, subprotocol, station, self.settings, self.sessions)
+        cp = _build_chargepoint(
+            cp_id, ws, subprotocol, station, self.settings, self.sessions, self.metrics
+        )
         self._connections[cp_id] = cp
         try:
-            await _bounded_pump(cp, station, self.settings.inbound_queue_depth)
+            await _bounded_pump(cp, station, self.settings.inbound_queue_depth, self.metrics)
         except ConnectionClosed:
             pass
         finally:
             self._connections.pop(cp_id, None)
             station.fsm.transition(Trigger.WS_CLOSE)
+            self.metrics.stations_connected.dec()
+            if station.quarantined:
+                station.quarantined = False
+                self.metrics.stations_quarantined.dec()
             logger.info("station disconnected")
             unbind_station()
             clear()
@@ -166,10 +182,11 @@ def _build_chargepoint(
     station: Station,
     settings: Settings,
     sessions: SessionStore,
+    metrics: Metrics,
 ) -> CsmsChargePointV16 | CsmsChargePointV201:
     if subprotocol == _SUBPROTOCOL_16:
-        return CsmsChargePointV16(cp_id, ws, station, settings, sessions)
-    return CsmsChargePointV201(cp_id, ws, station, settings, sessions)
+        return CsmsChargePointV16(cp_id, ws, station, settings, sessions, metrics)
+    return CsmsChargePointV201(cp_id, ws, station, settings, sessions, metrics)
 
 
 def path_regex() -> re.Pattern[str]:
