@@ -1,0 +1,5 @@
+type: boot-loop
+station_prefix: SIM-BL-
+protocol: ocpp1.6
+interval_sec: 2
+iterations: 10

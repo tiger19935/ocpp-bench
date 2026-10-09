@@ -72,7 +72,7 @@ follow_imports = "silent"
 # under strict mode; mypy flags the handler as untyped. Narrowly disable the
 # check in the two modules that mount handlers.
 [[tool.mypy.overrides]]
-module = ["ocpp_bench.csms.connection"]
+module = ["ocpp_bench.csms.connection", "ocpp_bench.sim.scenarios.adversarial"]
 disallow_untyped_decorators = false
 
 [tool.pytest.ini_options]

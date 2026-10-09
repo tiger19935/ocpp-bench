@@ -1,0 +1,4 @@
+type: oversized-metervalues
+station_prefix: SIM-BIG-
+protocol: ocpp1.6
+size_kb: 256

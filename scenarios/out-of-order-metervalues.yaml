@@ -1,0 +1,4 @@
+type: out-of-order-metervalues
+station_prefix: SIM-OOO-
+protocol: ocpp1.6
+samples: 20

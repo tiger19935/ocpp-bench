@@ -1,0 +1,4 @@
+type: slow-consumer
+station_prefix: SIM-SLOW-
+protocol: ocpp1.6
+response_delay_sec: 35
