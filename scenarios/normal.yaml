@@ -1,0 +1,5 @@
+type: normal
+stations: 10
+station_prefix: SIM-NORMAL-
+protocol: ocpp1.6
+meter_values_per_session: 5

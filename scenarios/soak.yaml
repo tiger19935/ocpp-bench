@@ -1,0 +1,6 @@
+type: soak
+stations: 50
+station_prefix: SIM-SOAK-
+protocol: ocpp1.6
+duration_sec: 60
+heartbeat_interval_sec: 10
