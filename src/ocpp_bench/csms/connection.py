@@ -163,13 +163,24 @@ class CsmsChargePointV16(ChargePointV16):  # type: ignore[misc]
     ) -> cr16.StopTransaction:
         txn = await self.sessions.close(transaction_id)
         self.station.fsm.transition(Trigger.STOP_TXN)
-        logger.info(
-            "stop transaction",
-            transaction_id=transaction_id,
-            meter_stop=meter_stop,
-            timestamp=timestamp,
-            known=txn is not None,
-        )
+        if txn is None:
+            # Real-world: chargers reconnect after a long gap and still send
+            # the StopTransaction for a transaction the CSMS has no live
+            # record of. Rejecting here would strand the charger; accept it
+            # and flag so the audit log can reconcile upstream.
+            logger.warning(
+                "late stop for unknown transaction",
+                transaction_id=transaction_id,
+                meter_stop=meter_stop,
+                timestamp=timestamp,
+            )
+        else:
+            logger.info(
+                "stop transaction",
+                transaction_id=transaction_id,
+                meter_stop=meter_stop,
+                timestamp=timestamp,
+            )
         return cr16.StopTransaction(id_tag_info=IdTagInfo(status=AuthorizationStatus.accepted))
 
     @on(Action16.meter_values)
