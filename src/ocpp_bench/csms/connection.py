@@ -6,10 +6,16 @@ from typing import Any
 
 from ocpp.routing import on
 from ocpp.v16 import ChargePoint as ChargePointV16
+from ocpp.v16 import call as call16
 from ocpp.v16 import call_result as cr16
 from ocpp.v16.datatypes import IdTagInfo
 from ocpp.v16.enums import Action as Action16
-from ocpp.v16.enums import AuthorizationStatus, ChargePointStatus, RegistrationStatus
+from ocpp.v16.enums import (
+    AuthorizationStatus,
+    ChargePointStatus,
+    RegistrationStatus,
+    ResetType,
+)
 from ocpp.v201 import ChargePoint as ChargePointV201
 from ocpp.v201 import call as call201
 from ocpp.v201 import call_result as cr201
@@ -163,6 +169,25 @@ class CsmsChargePointV16(ChargePointV16):  # type: ignore[misc]
     ) -> cr16.MeterValues:
         logger.debug("meter values", connector_id=connector_id, count=len(meter_value))
         return cr16.MeterValues()
+
+    async def remote_start(
+        self, id_tag: str, connector_id: int | None = None
+    ) -> cr16.RemoteStartTransaction:
+        return await self.call(
+            call16.RemoteStartTransaction(id_tag=id_tag, connector_id=connector_id)
+        )
+
+    async def remote_stop(self, transaction_id: int) -> cr16.RemoteStopTransaction:
+        return await self.call(call16.RemoteStopTransaction(transaction_id=transaction_id))
+
+    async def reset(self, reset_type: ResetType = ResetType.soft) -> cr16.Reset:
+        return await self.call(call16.Reset(type=reset_type))
+
+    async def get_configuration(self, key: list[str] | None = None) -> cr16.GetConfiguration:
+        return await self.call(call16.GetConfiguration(key=key))
+
+    async def change_configuration(self, key: str, value: str) -> cr16.ChangeConfiguration:
+        return await self.call(call16.ChangeConfiguration(key=key, value=value))
 
 
 class CsmsChargePointV201(ChargePointV201):  # type: ignore[misc]

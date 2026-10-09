@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import re
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from websockets.asyncio.server import ServerConnection, serve
 from websockets.exceptions import ConnectionClosed
@@ -29,6 +29,7 @@ class CsmsServer:
     settings: Settings
     store: StationStore
     sessions: SessionStore
+    _connections: dict[str, CsmsChargePointV16 | CsmsChargePointV201] = field(default_factory=dict)
 
     @classmethod
     def from_settings(cls, settings: Settings) -> CsmsServer:
@@ -37,6 +38,9 @@ class CsmsServer:
             store=InMemoryStationStore(),
             sessions=SessionStore(),
         )
+
+    def get_connection(self, cp_id: str) -> CsmsChargePointV16 | CsmsChargePointV201 | None:
+        return self._connections.get(cp_id)
 
     def _supported_subprotocols(self) -> list[Subprotocol]:
         match self.settings.protocol:
@@ -94,11 +98,13 @@ class CsmsServer:
         logger.info("station connected", path=path)
 
         cp = _build_chargepoint(cp_id, ws, subprotocol, station, self.settings, self.sessions)
+        self._connections[cp_id] = cp
         try:
             await cp.start()
         except ConnectionClosed:
             pass
         finally:
+            self._connections.pop(cp_id, None)
             station.fsm.transition(Trigger.WS_CLOSE)
             logger.info("station disconnected")
             unbind_station()
