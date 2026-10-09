@@ -12,5 +12,6 @@
 | out-of-order MeterValues      | Accepted as-is; audit retains original timestamps                                     | `tests/integration/test_sim_scenarios::test_out_of_order_metervalues`     |
 | oversized MeterValues         | Single large payload accepted up to size_kb                                           | `tests/integration/test_sim_scenarios::test_oversized_metervalues`        |
 | boot-loop                     | Repeated BootNotification does not crash; eventually triggers quarantine              | `tests/integration/test_sim_scenarios::test_boot_loop`                    |
+| burst                         | 1 Hz Heartbeat + 0.5 Hz MeterValues per station; no CALLERRORs, no drops, p95 bounded | `tests/integration/test_burst::test_burst_small_passes`                   |
 | inbound queue overflow        | CALLERROR InboundQueueFull on the Call; drop counter increments                       | `tests/integration/test_backpressure`                                     |
 | unknown subprotocol           | 400 rejection at WS handshake                                                         | `tests/integration/test_server_handshake::test_rejects_unknown_subprotocol`|

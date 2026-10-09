@@ -41,6 +41,7 @@ Prometheus is at `http://localhost:9090`. Grafana (optional, behind the
 | normal                    | Each station completes one charging session end to end            |
 | soak                      | N stations heartbeat for M seconds                                |
 | reconnect-storm           | All stations drop and reconnect inside a tight window             |
+| burst                     | Each station sends 1 Hz Heartbeat + 0.5 Hz MeterValues under load |
 | flapping                  | One station reconnects every X ms while N stable stations run     |
 | slow-consumer             | Station delays its response past the CSMS call timeout            |
 | duplicate-start           | Two identical StartTransaction CALLs within the dedupe window     |

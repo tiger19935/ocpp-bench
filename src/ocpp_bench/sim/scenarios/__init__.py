@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import Annotated
+from collections.abc import Callable
+from typing import Annotated, cast
 
 from pydantic import Field, TypeAdapter
 
@@ -17,6 +18,7 @@ from ocpp_bench.sim.scenarios.adversarial import (
     SlowConsumerScenario,
 )
 from ocpp_bench.sim.scenarios.base import Scenario, ScenarioResult
+from ocpp_bench.sim.scenarios.burst import BurstConfig, BurstScenario
 from ocpp_bench.sim.scenarios.flapping import FlappingConfig, FlappingScenario
 from ocpp_bench.sim.scenarios.normal import NormalConfig, NormalScenario
 from ocpp_bench.sim.scenarios.reconnect_storm import (
@@ -25,19 +27,7 @@ from ocpp_bench.sim.scenarios.reconnect_storm import (
 )
 from ocpp_bench.sim.scenarios.soak import SoakConfig, SoakScenario
 
-ScenarioConfig = Annotated[
-    NormalConfig
-    | SoakConfig
-    | ReconnectStormConfig
-    | FlappingConfig
-    | SlowConsumerConfig
-    | DuplicateStartConfig
-    | OutOfOrderMeterValuesConfig
-    | OversizedMeterValuesConfig
-    | BootLoopConfig,
-    Field(discriminator="type"),
-]
-_ADAPTER: TypeAdapter[
+_AnyConfig = (
     NormalConfig
     | SoakConfig
     | ReconnectStormConfig
@@ -47,30 +37,44 @@ _ADAPTER: TypeAdapter[
     | OutOfOrderMeterValuesConfig
     | OversizedMeterValuesConfig
     | BootLoopConfig
-] = TypeAdapter(ScenarioConfig)  # type: ignore[arg-type, unused-ignore]
+    | BurstConfig
+)
+ScenarioConfig = Annotated[_AnyConfig, Field(discriminator="type")]
+# TypeAdapter accepts Annotated[Union, Field(discriminator=...)] at runtime,
+# but mypy's TypeAdapter[T] overload only accepts a plain type[T]. The ignore
+# documents a known pydantic / mypy mismatch; the unused-ignore pair keeps it
+# valid under both macOS and Linux mypy (Linux stops reporting the arg-type).
+_ADAPTER: TypeAdapter[_AnyConfig] = TypeAdapter(ScenarioConfig)  # type: ignore[arg-type, unused-ignore]
 
 
-_SCENARIO_BY_CONFIG: dict[type, type[Scenario]] = {
-    NormalConfig: NormalScenario,
-    SoakConfig: SoakScenario,
-    ReconnectStormConfig: ReconnectStormScenario,
-    FlappingConfig: FlappingScenario,
-    SlowConsumerConfig: SlowConsumerScenario,
-    DuplicateStartConfig: DuplicateStartScenario,
-    OutOfOrderMeterValuesConfig: OutOfOrderMeterValuesScenario,
-    OversizedMeterValuesConfig: OversizedMeterValuesScenario,
-    BootLoopConfig: BootLoopScenario,
+_FACTORIES: dict[type[_AnyConfig], Callable[[_AnyConfig], Scenario]] = {
+    NormalConfig: lambda c: NormalScenario(cfg=cast(NormalConfig, c)),
+    SoakConfig: lambda c: SoakScenario(cfg=cast(SoakConfig, c)),
+    ReconnectStormConfig: lambda c: ReconnectStormScenario(cfg=cast(ReconnectStormConfig, c)),
+    FlappingConfig: lambda c: FlappingScenario(cfg=cast(FlappingConfig, c)),
+    SlowConsumerConfig: lambda c: SlowConsumerScenario(cfg=cast(SlowConsumerConfig, c)),
+    DuplicateStartConfig: lambda c: DuplicateStartScenario(cfg=cast(DuplicateStartConfig, c)),
+    OutOfOrderMeterValuesConfig: lambda c: OutOfOrderMeterValuesScenario(
+        cfg=cast(OutOfOrderMeterValuesConfig, c)
+    ),
+    OversizedMeterValuesConfig: lambda c: OversizedMeterValuesScenario(
+        cfg=cast(OversizedMeterValuesConfig, c)
+    ),
+    BootLoopConfig: lambda c: BootLoopScenario(cfg=cast(BootLoopConfig, c)),
+    BurstConfig: lambda c: BurstScenario(cfg=cast(BurstConfig, c)),
 }
 
 
 def load_scenario(data: dict[str, object]) -> Scenario:
     cfg = _ADAPTER.validate_python(data)
-    return _SCENARIO_BY_CONFIG[type(cfg)](cfg=cfg)  # type: ignore[call-arg]
+    return _FACTORIES[type(cfg)](cfg)
 
 
 __all__ = [
     "BootLoopConfig",
     "BootLoopScenario",
+    "BurstConfig",
+    "BurstScenario",
     "DuplicateStartConfig",
     "DuplicateStartScenario",
     "FlappingConfig",

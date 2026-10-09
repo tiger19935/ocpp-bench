@@ -32,6 +32,9 @@ coverage:
 load:
 	$(PY) ocpp-bench sim --target ws://localhost:9000/ocpp --stations 1000 --scenario soak --protocol 1.6 --duration 60
 
+load-burst:
+	$(PY) ocpp-bench sim --target ws://localhost:9000/ocpp --admin-url http://localhost:9100 --stations 1000 --scenario burst --protocol 1.6 --duration 60
+
 sim:
 	$(PY) ocpp-bench sim --target ws://localhost:9000/ocpp --stations 50 --scenario normal --protocol 1.6
 

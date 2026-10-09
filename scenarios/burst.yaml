@@ -1,0 +1,8 @@
+type: burst
+stations: 1000
+station_prefix: SIM-BURST-
+protocol: ocpp1.6
+duration_sec: 60
+heartbeat_interval_sec: 1
+metervalue_interval_sec: 2
+p95_budget_sec: 0.5
